@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package datacount;
+
+option go_package = "github.com/grpc-demo/datacount/protoc";
+
+message RowRequest {
+  int64 old = 1;
+  string name = 2;
+  string sex = 3;
+  string province = 4;
+}
+
+message CountResponse {
+  int64 result = 1;
+}
+
+service countService {
+  // 客户端流式请求
+  rpc ClientData (stream RowRequest) returns (CountResponse) {}
+  // 服务端响应
+  rpc ServerCount (RowRequest) returns (CountResponse) {}
+}
