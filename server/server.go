@@ -11,15 +11,11 @@ import (
 	"log"
 	"net"
 	"os"
-	"strconv"
-	"sync"
 )
 
 type countService struct {
 	pb.UnimplementedCountServiceServer
 }
-
-var wg sync.WaitGroup
 
 func main() {
 	listen, err := net.Listen("tcp", ":50051")
@@ -44,27 +40,19 @@ func (s *countService) ClientData (stream pb.CountService_ClientDataServer) erro
 	fmt.Println("开始接收")
 	for {
 		row, err := stream.Recv()
+		fmt.Println(row)
 		if err == io.EOF {
 			return stream.SendAndClose(&pb.CountResponse{Result: result})
 		}
 		if err != nil {
 			log.Fatalln(err)
 		}
-		fmt.Println(row)
-
 		var buffer bytes.Buffer
-		buffer.WriteString(row.Name)
-		buffer.WriteString("，")
-		buffer.WriteString(row.Sex)
-		buffer.WriteString("，今年")
-		buffer.WriteString(strconv.FormatInt(row.Old, 10))
-		buffer.WriteString("岁，")
-		buffer.WriteString("来自")
-		buffer.WriteString(row.Province)
-		tmp := buffer.String()
-		fmt.Println(tmp)
-		newWriter.WriteString(tmp)
-		newWriter.Flush()
+		for _, line := range row.Line {
+			buffer.WriteString(line)
+			newWriter.WriteString(buffer.String())
+			newWriter.Flush()
+		}
 		result += 1
 	}
 	return nil

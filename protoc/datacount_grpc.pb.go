@@ -20,8 +20,6 @@ const _ = grpc.SupportPackageIsVersion7
 type CountServiceClient interface {
 	// 客户端流式请求
 	ClientData(ctx context.Context, opts ...grpc.CallOption) (CountService_ClientDataClient, error)
-	// 服务端响应
-	ServerCount(ctx context.Context, in *RowRequest, opts ...grpc.CallOption) (*CountResponse, error)
 }
 
 type countServiceClient struct {
@@ -66,23 +64,12 @@ func (x *countServiceClientDataClient) CloseAndRecv() (*CountResponse, error) {
 	return m, nil
 }
 
-func (c *countServiceClient) ServerCount(ctx context.Context, in *RowRequest, opts ...grpc.CallOption) (*CountResponse, error) {
-	out := new(CountResponse)
-	err := c.cc.Invoke(ctx, "/datacount.countService/ServerCount", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // CountServiceServer is the server API for CountService service.
 // All implementations must embed UnimplementedCountServiceServer
 // for forward compatibility
 type CountServiceServer interface {
 	// 客户端流式请求
 	ClientData(CountService_ClientDataServer) error
-	// 服务端响应
-	ServerCount(context.Context, *RowRequest) (*CountResponse, error)
 	mustEmbedUnimplementedCountServiceServer()
 }
 
@@ -92,9 +79,6 @@ type UnimplementedCountServiceServer struct {
 
 func (UnimplementedCountServiceServer) ClientData(CountService_ClientDataServer) error {
 	return status.Errorf(codes.Unimplemented, "method ClientData not implemented")
-}
-func (UnimplementedCountServiceServer) ServerCount(context.Context, *RowRequest) (*CountResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ServerCount not implemented")
 }
 func (UnimplementedCountServiceServer) mustEmbedUnimplementedCountServiceServer() {}
 
@@ -135,36 +119,13 @@ func (x *countServiceClientDataServer) Recv() (*RowRequest, error) {
 	return m, nil
 }
 
-func _CountService_ServerCount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RowRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CountServiceServer).ServerCount(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/datacount.countService/ServerCount",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CountServiceServer).ServerCount(ctx, req.(*RowRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // CountService_ServiceDesc is the grpc.ServiceDesc for CountService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var CountService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "datacount.countService",
 	HandlerType: (*CountServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "ServerCount",
-			Handler:    _CountService_ServerCount_Handler,
-		},
-	},
+	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "ClientData",
