@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+// 命令
+// protoc --go_out=plugins=grpc:. *.proto
+
+// 指定 go 文件生成目录
+option go_package = "./statistic";
+package proto;
+
+service StatisticService {
+    rpc GetData(StreamRequest) returns ( stream StreamResponse) {}
+}
+
+message StreamRequest {
+    string filePath = 1;
+}
+
+message StreamResponse {
+    repeated User user = 1;
+    int64 total = 2;
+}
+
+message User {
+    string name = 1;
+    string age = 2;
+    string province = 3;
+    string sex = 4;
+}
