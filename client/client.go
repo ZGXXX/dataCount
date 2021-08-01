@@ -10,44 +10,58 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"log"
 )
 
 func main() {
 	// 开始时间
 	t1 := time.Now()
-	conn, err := grpc.Dial("10.8.60.20:9002", grpc.WithInsecure(), grpc.WithBlock())
-	//conn, err := grpc.Dial(":10086", grpc.WithInsecure(), grpc.WithBlock())
+	// 开启grpc客户端连接
+	//conn, err := grpc.Dial("10.8.60.20:9002", grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.Dial(":10086", grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
-		log.Fatalln(err)
 		fmt.Println("连接失败")
 	}
 	defer conn.Close()
+	// 处理文件数组
+	limit := 100
+	ch := make(chan []*pb.User)
+	handleArray("test.csv", limit, ch)
+	// 启动客户端
+	client := pb.NewStatisticServiceClient(conn)
+	// 从chan获取值进行发送请求
+	timeNum := 0
+	// 客户端流式请求
+	request, _ := client.DealData(context.Background())
+	for items := range ch {
+		if len(items) > 0 {
+			if err != nil {
+				return
+			}
+			clientStream(request, items, int64(limit))
+			timeNum ++
+		}
+	}
+	res, err := request.CloseAndRecv()
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("调用gRPC方法成功，result = ", res.Result)
 
-	//// 启动客户端
-	//client := pb.NewStatisticServiceClient(conn)
-	//request, _ := client.DealData(context.Background())
-	//newArr := []*pb.User{
-	//	{Name: "赵国鑫", Sex: "男", Age: "11", Province: "广东省"},
-	//	{Name: "赵国鑫2", Sex: "男", Age: "22", Province: "广东省"},
-	//	{Name: "赵国鑫3", Sex: "男", Age: "22", Province: "广东省"},
-	//	{Name: "赵国鑫3", Sex: "女", Age: "22", Province: "广东省"},
-	//	{Name: "赵国鑫4", Sex: "女", Age: "22", Province: "广东省"},
-	//}
-	//
-	//err = request.Send(&pb.StreamRequest{User : newArr, Total : 1})
-	//if err != nil {
-	//	fmt.Println("发送失败")
-	//}
-	//res, err := request.CloseAndRecv()
-	//if err != nil {
-	//	fmt.Println(err)
-	//}
-	//fmt.Println("调用gRPC方法成功，result = ", res.Result)
-	//return
+	// 结束时间
+	t3 := time.Now()
+	joinSqlTime := t3.Sub(t1)
+	fmt.Printf("客户端发送花费时间：%f\n", joinSqlTime.Seconds())
+}
 
-	// 本地待处理文件
-	localFile, err := os.Open("test2.csv")
+func clientStream (request pb.StatisticService_DealDataClient, items []*pb.User, total int64) {
+	err := request.Send(&pb.StreamRequest{User : items, Total : total})
+	if err != nil {
+		fmt.Println("发送失败")
+	}
+}
+
+func handleArray (filePath string, limit int, ch chan []*pb.User) {
+	localFile, err := os.Open(filePath)
 	if err != nil {
 		fmt.Println("打开文件失败")
 	}
@@ -75,13 +89,6 @@ func main() {
 		requestArr = append(requestArr, newArr)
 	}
 
-	t2 := time.Now()
-	joinSqlTime := t2.Sub(t1)
-
-	// 使用channel数组类型，将大数组分多次切割放入chan管道
-	// 300万数据分100次传grpc，大小已经接近grpc默认接收字节最大值4M了，速率是最快的
-	limit := 3
-	ch := make(chan []*pb.User)
 	allCount := len(requestArr) / limit
 	go func() {
 		for i:=0;i<=limit;i++ {
@@ -95,42 +102,30 @@ func main() {
 		}
 		close(ch)
 	}()
+}
 
-
+func test () {
 	// 启动客户端
+	conn, err := grpc.Dial("10.8.60.20:9002", grpc.WithInsecure(), grpc.WithBlock())
+
 	client := pb.NewStatisticServiceClient(conn)
-	// 从chan获取值进行发送请求
-	timeNum := 0
-	// 客户端流式请求
 	request, _ := client.DealData(context.Background())
-	for items := range ch {
-		if len(items) > 0 {
-			if err != nil {
-				return
-			}
-			fmt.Println(items)
-			clientStream(request, items, int64(limit))
-			timeNum ++
-		}
+	newArr := []*pb.User{
+		{Name: "赵国鑫", Sex: "男", Age: "11", Province: "广东省"},
+		{Name: "赵国鑫2", Sex: "男", Age: "22", Province: "广东省"},
+		{Name: "赵国鑫3", Sex: "男", Age: "22", Province: "广东省"},
+		{Name: "赵国鑫3", Sex: "女", Age: "22", Province: "广东省"},
+		{Name: "赵国鑫4", Sex: "女", Age: "22", Province: "广东省"},
 	}
-	fmt.Println(timeNum)
+
+	err = request.Send(&pb.StreamRequest{User : newArr, Total : 1})
+	if err != nil {
+		fmt.Println("发送失败")
+	}
 	res, err := request.CloseAndRecv()
 	if err != nil {
 		fmt.Println(err)
 	}
 	fmt.Println("调用gRPC方法成功，result = ", res.Result)
-
-	// 结束时间
-	t3 := time.Now()
-	joinSqlTime2 := t3.Sub(t1)
-
-	fmt.Printf("所有数据读取到数组花费：%f\n", joinSqlTime.Seconds())
-	fmt.Printf("客户端发送花费时间：%f\n", joinSqlTime2.Seconds())
-}
-
-func clientStream (request pb.StatisticService_DealDataClient, items []*pb.User, total int64) {
-	err := request.Send(&pb.StreamRequest{User : items, Total : total})
-	if err != nil {
-		fmt.Println("发送失败")
-	}
+	return
 }
