@@ -2,58 +2,51 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	pb "github.com/grpc-demo/datacount/protoc"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 	"io"
 	"log"
 	"net"
 	"os"
 )
 
-type countService struct {
-	pb.UnimplementedCountServiceServer
+type statisticService struct {
+	pb.UnimplementedStatisticServiceServer
 }
 
 func main() {
-	listen, err := net.Listen("tcp", ":50051")
+	listen, err := net.Listen("tcp", ":10086")
 	if err != nil {
 		log.Fatalln(err)
 	}
 	grpcServer := grpc.NewServer()
-	reflection.Register(grpcServer)
-	pb.RegisterCountServiceServer(grpcServer, &countService{})
+	pb.RegisterStatisticServiceServer(grpcServer, &statisticService{})
 
 	grpcServer.Serve(listen)
 }
 
-func (s *countService) ClientData (stream pb.CountService_ClientDataServer) error {
+func (s *statisticService) DealData (stream pb.StatisticService_DealDataServer) error {
 	localFile, err := os.OpenFile("统计文件.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalln(err)
 	}
 	defer localFile.Close()
 	newWriter := bufio.NewWriter(localFile)
-	result := int64(0)
 	fmt.Println("开始接收")
 	for {
 		row, err := stream.Recv()
-		fmt.Println(row)
+		result := "处理成功"
 		if err == io.EOF {
-			return stream.SendAndClose(&pb.CountResponse{Result: result})
+			return stream.SendAndClose(&pb.StreamResponse{Result: result})
 		}
 		if err != nil {
 			log.Fatalln(err)
 		}
-		var buffer bytes.Buffer
-		for _, line := range row.Line {
-			buffer.WriteString(line)
-			newWriter.WriteString(buffer.String())
-			newWriter.Flush()
+		for _, item := range row.User {
+			newWriter.WriteString(item.Name + item.Sex + item.Age + item.Province + "\n")
 		}
-		result += 1
+		newWriter.Flush()
 	}
 	return nil
 }

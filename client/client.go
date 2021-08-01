@@ -5,49 +5,87 @@ import (
 	"context"
 	"fmt"
 	pb "github.com/grpc-demo/datacount/protoc"
-	"log"
 	"os"
-	"sync"
+	"strings"
 	"time"
-)
 
-var wg sync.WaitGroup
+	"google.golang.org/grpc"
+	"log"
+)
 
 func main() {
 	// 开始时间
 	t1 := time.Now()
-	var requestArr []string
+	conn, err := grpc.Dial("10.8.60.20:9002", grpc.WithInsecure(), grpc.WithBlock())
+	//conn, err := grpc.Dial(":10086", grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		log.Fatalln(err)
+		fmt.Println("连接失败")
+	}
+	defer conn.Close()
 
-	//conn, err := grpc.Dial(":50051", grpc.WithInsecure(), grpc.WithBlock())
-	//if err != nil {
-	//	log.Fatalln(err)
-	//	fmt.Println("连接失败")
+	//// 启动客户端
+	//client := pb.NewStatisticServiceClient(conn)
+	//request, _ := client.DealData(context.Background())
+	//newArr := []*pb.User{
+	//	{Name: "赵国鑫", Sex: "男", Age: "11", Province: "广东省"},
+	//	{Name: "赵国鑫2", Sex: "男", Age: "22", Province: "广东省"},
+	//	{Name: "赵国鑫3", Sex: "男", Age: "22", Province: "广东省"},
+	//	{Name: "赵国鑫3", Sex: "女", Age: "22", Province: "广东省"},
+	//	{Name: "赵国鑫4", Sex: "女", Age: "22", Province: "广东省"},
 	//}
-	//defer conn.Close()
-
+	//
+	//err = request.Send(&pb.StreamRequest{User : newArr, Total : 1})
+	//if err != nil {
+	//	fmt.Println("发送失败")
+	//}
+	//res, err := request.CloseAndRecv()
+	//if err != nil {
+	//	fmt.Println(err)
+	//}
+	//fmt.Println("调用gRPC方法成功，result = ", res.Result)
+	//return
 
 	// 本地待处理文件
-	localFile, err := os.Open("source_0.csv")
+	localFile, err := os.Open("test2.csv")
 	if err != nil {
 		fmt.Println("打开文件失败")
 	}
 	defer localFile.Close()
-	// 遍历每一行
+
+	var requestArr []*pb.User
+	var lineName, lineSex, lineAge, lineProvince string
+	var lineArray []string
+
+	// 遍历每一行，存到一个大数组中
 	fileScan := bufio.NewScanner(localFile)
 	for fileScan.Scan() {
-		requestArr = append(requestArr, fileScan.Text())
+		line := fileScan.Text()
+		lineArray    = strings.Split(strings.Replace(line, " ", "", -1), ",")
+		lineName     = lineArray[0]
+		lineSex      = lineArray[1]
+		lineAge      = lineArray[2]
+		lineProvince = lineArray[3]
+		newArr := &pb.User{
+			Name:     lineName,
+			Age:      lineAge,
+			Province: lineProvince,
+			Sex:      lineSex,
+		}
+		requestArr = append(requestArr, newArr)
 	}
-	//client := pb.NewCountServiceClient(conn)
+
 	t2 := time.Now()
 	joinSqlTime := t2.Sub(t1)
 
-	limit := 5
-	ch := make(chan []string, 2000)
+	// 使用channel数组类型，将大数组分多次切割放入chan管道
+	// 300万数据分100次传grpc，大小已经接近grpc默认接收字节最大值4M了，速率是最快的
+	limit := 3
+	ch := make(chan []*pb.User)
 	allCount := len(requestArr) / limit
-
 	go func() {
 		for i:=0;i<=limit;i++ {
-			var newArr []string
+			var newArr []*pb.User
 			if i == limit {
 				newArr = requestArr[allCount * i : ]
 			} else {
@@ -58,22 +96,29 @@ func main() {
 		close(ch)
 	}()
 
-	saveFile, err := os.OpenFile("统计文件.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	defer localFile.Close()
-	newWriter := bufio.NewWriter(saveFile)
 
-	countNum := 0
+	// 启动客户端
+	client := pb.NewStatisticServiceClient(conn)
+	// 从chan获取值进行发送请求
+	timeNum := 0
+	// 客户端流式请求
+	request, _ := client.DealData(context.Background())
 	for items := range ch {
-		for _, item := range items {
-			newWriter.WriteString(item + "\n")
-			countNum ++
+		if len(items) > 0 {
+			if err != nil {
+				return
+			}
+			fmt.Println(items)
+			clientStream(request, items, int64(limit))
+			timeNum ++
 		}
 	}
-	newWriter.Flush()
-
+	fmt.Println(timeNum)
+	res, err := request.CloseAndRecv()
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("调用gRPC方法成功，result = ", res.Result)
 
 	// 结束时间
 	t3 := time.Now()
@@ -81,70 +126,11 @@ func main() {
 
 	fmt.Printf("所有数据读取到数组花费：%f\n", joinSqlTime.Seconds())
 	fmt.Printf("客户端发送花费时间：%f\n", joinSqlTime2.Seconds())
-	fmt.Println(countNum)
-	//test()
 }
 
-func clientStream (client pb.CountServiceClient, ch chan []string) {
-	defer wg.Done()
-	// 客户端流式请求
-	request, _ := client.ClientData(context.Background())
-	data := <-ch
-	err := request.Send(&pb.RowRequest{Line: data})
+func clientStream (request pb.StatisticService_DealDataClient, items []*pb.User, total int64) {
+	err := request.Send(&pb.StreamRequest{User : items, Total : total})
 	if err != nil {
 		fmt.Println("发送失败")
 	}
-	res, err := request.CloseAndRecv()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println("调用gRPC方法成功，result = ", res.Result)
-}
-
-
-func test () {
-	//本地待处理文件
-	localFile, err := os.Open("test.csv")
-	if err != nil {
-		log.Fatalln(err)
-		fmt.Println("打开文件失败")
-	}
-	defer localFile.Close()
-
-	// 开始时间
-	t1 := time.Now()
-
-	var requestArr []string
-	ch := make(chan []string, 2000)
-
-	//遍历每一行
-	fileScan := bufio.NewScanner(localFile)
-	i := 0
-	for fileScan.Scan() {
-		if len(requestArr) < 100 {
-			requestArr = append(requestArr, fileScan.Text())
-		}
-		if len(requestArr) == 100 {
-			i = i + 1
-			fmt.Println(i)
-			ch <- requestArr
-			requestArr = []string{}
-		}
-	}
-
-	go func() {
-		for {
-			fileData, ok := <-ch
-			if !ok {
-				break
-			}
-			fmt.Println(fileData)
-		}
-	}()
-
-	// 结束时间
-	t2 := time.Now()
-	joinSqlTime := t2.Sub(t1)
-	fmt.Printf("客户端发送花费时间：%f\n", joinSqlTime.Seconds())
-
 }
