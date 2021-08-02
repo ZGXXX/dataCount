@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	pb "github.com/grpc-demo/datacount/protoc"
+	"io/ioutil"
 	"os"
 	"strings"
 	"time"
@@ -25,11 +26,11 @@ func main() {
 	// 处理文件数组
 	limit := 100
 	ch := make(chan []*pb.User)
-	handleArray("test.csv", limit, ch)
+
+	handleArray("source", limit, ch)
 	// 启动客户端
 	client := pb.NewStatisticServiceClient(conn)
 	// 从chan获取值进行发送请求
-	timeNum := 0
 	// 客户端流式请求
 	request, _ := client.DealData(context.Background())
 	for items := range ch {
@@ -38,7 +39,6 @@ func main() {
 				return
 			}
 			clientStream(request, items, int64(limit))
-			timeNum ++
 		}
 	}
 	res, err := request.CloseAndRecv()
@@ -61,44 +61,47 @@ func clientStream (request pb.StatisticService_DealDataClient, items []*pb.User,
 }
 
 func handleArray (filePath string, limit int, ch chan []*pb.User) {
-	localFile, err := os.Open(filePath)
-	if err != nil {
-		fmt.Println("打开文件失败")
-	}
-	defer localFile.Close()
-
-	var requestArr []*pb.User
-	var lineName, lineSex, lineAge, lineProvince string
-	var lineArray []string
-
-	// 遍历每一行，存到一个大数组中
-	fileScan := bufio.NewScanner(localFile)
-	for fileScan.Scan() {
-		line := fileScan.Text()
-		lineArray    = strings.Split(strings.Replace(line, " ", "", -1), ",")
-		lineName     = lineArray[0]
-		lineSex      = lineArray[1]
-		lineAge      = lineArray[2]
-		lineProvince = lineArray[3]
-		newArr := &pb.User{
-			Name:     lineName,
-			Age:      lineAge,
-			Province: lineProvince,
-			Sex:      lineSex,
-		}
-		requestArr = append(requestArr, newArr)
-	}
-
-	allCount := len(requestArr) / limit
+	files, _ := ioutil.ReadDir(filePath)
 	go func() {
-		for i:=0;i<=limit;i++ {
-			var newArr []*pb.User
-			if i == limit {
-				newArr = requestArr[allCount * i : ]
-			} else {
-				newArr = requestArr[allCount * i : allCount * (i+1)]
+		for _, f := range files{
+			localFile, err := os.Open(filePath + "/" + f.Name())
+			if err != nil {
+				fmt.Println("打开文件失败")
 			}
-			ch <- newArr
+			defer localFile.Close()
+
+			var requestArr []*pb.User
+			var lineName, lineSex, lineAge, lineProvince string
+			var lineArray []string
+
+			// 遍历每一行，存到一个大数组中
+			fileScan := bufio.NewScanner(localFile)
+			for fileScan.Scan() {
+				line := fileScan.Text()
+				lineArray    = strings.Split(strings.Replace(line, " ", "", -1), ",")
+				lineName     = lineArray[0]
+				lineSex      = lineArray[1]
+				lineAge      = lineArray[2]
+				lineProvince = lineArray[3]
+				newArr := &pb.User{
+					Name:     lineName,
+					Age:      lineAge,
+					Province: lineProvince,
+					Sex:      lineSex,
+				}
+				requestArr = append(requestArr, newArr)
+			}
+
+			allCount := len(requestArr) / limit
+			for i:=0;i<=limit;i++ {
+				var newArr []*pb.User
+				if i == limit {
+					newArr = requestArr[allCount * i : ]
+				} else {
+					newArr = requestArr[allCount * i : allCount * (i+1)]
+				}
+				ch <- newArr
+			}
 		}
 		close(ch)
 	}()
