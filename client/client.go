@@ -38,7 +38,7 @@ func main() {
 			if err != nil {
 				return
 			}
-			clientStream(request, items, int64(limit))
+			clientStream(request, items, int64(limit * 10))
 		}
 	}
 	res, err := request.CloseAndRecv()
@@ -63,7 +63,7 @@ func clientStream (request pb.StatisticService_DealDataClient, items []*pb.User,
 func handleArray (filePath string, limit int, ch chan []*pb.User) {
 	files, _ := ioutil.ReadDir(filePath)
 	go func() {
-		for _, f := range files{
+		for _, f := range files {
 			localFile, err := os.Open(filePath + "/" + f.Name())
 			if err != nil {
 				fmt.Println("打开文件失败")
@@ -93,9 +93,10 @@ func handleArray (filePath string, limit int, ch chan []*pb.User) {
 			}
 
 			allCount := len(requestArr) / limit
-			for i:=0;i<=limit;i++ {
+			fmt.Println(allCount)
+			for i:=0;i<limit;i++ {
 				var newArr []*pb.User
-				if i == limit {
+				if i == (limit - 1)  {
 					newArr = requestArr[allCount * i : ]
 				} else {
 					newArr = requestArr[allCount * i : allCount * (i+1)]
